@@ -25,8 +25,8 @@ export function SchemesPage() {
       <div className="grid lg:grid-cols-4 gap-8">
         {/* Sidebar */}
         <div className="lg:col-span-1 space-y-6">
-          <SchemeFilters />
           <EligibilityChecker />
+          <SchemeFilters />
         </div>
 
         {/* Main Content */}
