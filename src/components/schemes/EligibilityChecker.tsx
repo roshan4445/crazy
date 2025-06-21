@@ -18,10 +18,12 @@ import {
   IndianRupee,
   AlertCircle,
   ExternalLink,
-  Loader2
+  Loader2,
+  Users,
+  Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getEligibilityRecommendations, getDetailedSchemeInfo, type UserProfile, type SchemeRecommendation } from '@/lib/gemini';
+import { getEligibilityRecommendations, getDetailedSchemeInfo, type UserProfile, type Scheme } from '@/lib/gemini';
 
 const indianStates = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -56,23 +58,28 @@ export function EligibilityChecker() {
     category: '',
   });
   
-  const [recommendations, setRecommendations] = useState<SchemeRecommendation[]>([]);
+  const [eligibleSchemes, setEligibleSchemes] = useState<Scheme[]>([]);
   const [isChecking, setIsChecking] = useState(false);
-  const [selectedScheme, setSelectedScheme] = useState<SchemeRecommendation | null>(null);
+  const [selectedScheme, setSelectedScheme] = useState<Scheme | null>(null);
   const [schemeDetails, setSchemeDetails] = useState<string>('');
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
   const checkEligibility = async () => {
     if (!isFormComplete()) {
-      toast.error('Please fill in all required fields');
+      toast.error('Please fill in all required fields (Age, Income, Gender, State)');
       return;
     }
 
     setIsChecking(true);
     try {
       const results = await getEligibilityRecommendations(profile);
-      setRecommendations(results);
-      toast.success(`Found ${results.length} scheme recommendations for you!`);
+      setEligibleSchemes(results);
+      
+      if (results.length > 0) {
+        toast.success(`🎉 Found ${results.length} eligible schemes for you!`);
+      } else {
+        toast.info('No schemes found matching your current profile. Try updating your information.');
+      }
     } catch (error) {
       console.error('Error checking eligibility:', error);
       toast.error('Failed to get recommendations. Please try again.');
@@ -81,15 +88,15 @@ export function EligibilityChecker() {
     }
   };
 
-  const loadSchemeDetails = async (scheme: SchemeRecommendation) => {
+  const loadSchemeDetails = async (scheme: Scheme) => {
     setSelectedScheme(scheme);
     setIsLoadingDetails(true);
     try {
-      const details = await getDetailedSchemeInfo(scheme.schemeName);
+      const details = await getDetailedSchemeInfo(scheme.title);
       setSchemeDetails(details);
     } catch (error) {
       console.error('Error loading scheme details:', error);
-      setSchemeDetails('Failed to load detailed information. Please try again.');
+      setSchemeDetails('Failed to load detailed information. Please try again or visit the official government portal.');
     } finally {
       setIsLoadingDetails(false);
     }
@@ -99,13 +106,21 @@ export function EligibilityChecker() {
     return profile.age && profile.income && profile.gender && profile.state;
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300';
-      case 'low': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300';
-    }
+  const getProgressValue = (scheme: Scheme) => {
+    return Math.round((scheme.applied / scheme.slots) * 100);
+  };
+
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
+      'Education': 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300',
+      'Business': 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300',
+      'Digital India': 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300',
+      'Women & Child': 'bg-pink-100 text-pink-800 dark:bg-pink-900/20 dark:text-pink-300',
+      'Agriculture': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300',
+      'Healthcare': 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300',
+      'Housing': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-300',
+    };
+    return colors[category] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300';
   };
 
   return (
@@ -129,8 +144,8 @@ export function EligibilityChecker() {
           <Tabs defaultValue="profile" className="space-y-4">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="profile">Your Profile</TabsTrigger>
-              <TabsTrigger value="results" disabled={recommendations.length === 0}>
-                AI Recommendations ({recommendations.length})
+              <TabsTrigger value="results" disabled={eligibleSchemes.length === 0}>
+                Eligible Schemes ({eligibleSchemes.length})
               </TabsTrigger>
             </TabsList>
 
@@ -138,7 +153,10 @@ export function EligibilityChecker() {
               <div className="grid grid-cols-1 gap-4">
                 {/* Basic Information */}
                 <div className="space-y-3">
-                  <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Basic Information</h4>
+                  <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                    <User className="w-4 h-4" />
+                    Basic Information *
+                  </h4>
                   
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -169,7 +187,7 @@ export function EligibilityChecker() {
                   </div>
 
                   <div>
-                    <Label htmlFor="income" className="text-xs">Annual Income *</Label>
+                    <Label htmlFor="income" className="text-xs">Annual Family Income *</Label>
                     <Select onValueChange={(value) => setProfile(prev => ({ ...prev, income: value }))}>
                       <SelectTrigger className="h-8">
                         <SelectValue placeholder="Select income range" />
@@ -186,7 +204,7 @@ export function EligibilityChecker() {
                   </div>
 
                   <div>
-                    <Label htmlFor="state" className="text-xs">State *</Label>
+                    <Label htmlFor="state" className="text-xs">State/UT *</Label>
                     <Select onValueChange={(value) => setProfile(prev => ({ ...prev, state: value }))}>
                       <SelectTrigger className="h-8">
                         <SelectValue placeholder="Select state" />
@@ -268,7 +286,7 @@ export function EligibilityChecker() {
                   ) : (
                     <div className="flex items-center gap-2">
                       <Brain className="w-4 h-4" />
-                      Get AI Recommendations
+                      Check Eligibility with AI
                     </div>
                   )}
                 </Button>
@@ -276,65 +294,85 @@ export function EligibilityChecker() {
             </TabsContent>
 
             <TabsContent value="results" className="space-y-4">
-              {recommendations.length > 0 && (
+              {eligibleSchemes.length > 0 && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
                     <CheckCircle className="w-5 h-5" />
-                    <span className="font-semibold">AI found {recommendations.length} schemes for you!</span>
+                    <span className="font-semibold">You are eligible for {eligibleSchemes.length} schemes!</span>
                   </div>
 
                   <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {recommendations.map((scheme, index) => (
+                    {eligibleSchemes.map((scheme, index) => (
                       <motion.div
-                        key={index}
+                        key={scheme.id}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.1 }}
-                        className="border rounded-lg p-4 space-y-3 bg-white dark:bg-gray-800/50"
+                        className="border rounded-lg p-4 space-y-3 bg-white dark:bg-gray-800/50 hover:shadow-md transition-shadow"
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <h4 className="font-semibold text-sm">{scheme.schemeName}</h4>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                              {scheme.benefits}
+                            <div className="flex items-center gap-2 mb-2">
+                              <h4 className="font-semibold text-sm">{scheme.title}</h4>
+                              {scheme.isNew && (
+                                <Badge variant="default" className="text-xs animate-pulse">
+                                  NEW
+                                </Badge>
+                              )}
+                              {scheme.isUrgent && (
+                                <Badge variant="destructive" className="text-xs">
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  URGENT
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+                              {scheme.description}
                             </p>
-                          </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <Badge className={getPriorityColor(scheme.priority)}>
-                              {scheme.priority.toUpperCase()}
+                            <Badge className={getCategoryColor(scheme.category)}>
+                              {scheme.category}
                             </Badge>
-                            <span className="text-xs font-medium text-green-600">
-                              {scheme.eligibilityMatch}% match
-                            </span>
                           </div>
                         </div>
 
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs">
-                            <span>Eligibility Match</span>
-                            <span>{scheme.eligibilityMatch}%</span>
-                          </div>
-                          <Progress value={scheme.eligibilityMatch} className="h-1" />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="grid grid-cols-2 gap-4 text-xs">
                           <div className="flex items-center gap-1">
                             <IndianRupee className="w-3 h-3 text-green-600" />
-                            <span>{scheme.estimatedAmount}</span>
+                            <span className="font-medium">{scheme.amount}</span>
                           </div>
                           <div className="flex items-center gap-1">
                             <Calendar className="w-3 h-3 text-blue-600" />
-                            <span>{scheme.applicationDeadline}</span>
+                            <span>{scheme.deadline}</span>
                           </div>
                         </div>
 
+                        {/* Application Progress */}
                         <div className="space-y-2">
-                          <p className="text-xs text-gray-600 dark:text-gray-400">
-                            <strong>Why recommended:</strong> {scheme.reasoning}
-                          </p>
+                          <div className="flex justify-between text-xs">
+                            <span>Applications: {scheme.applied.toLocaleString()}/{scheme.slots.toLocaleString()}</span>
+                            <span>{getProgressValue(scheme)}% filled</span>
+                          </div>
+                          <Progress value={getProgressValue(scheme)} className="h-1" />
                         </div>
 
-                        <div className="flex gap-2">
+                        {/* Eligibility Preview */}
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-gray-500">Eligibility Criteria:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {scheme.eligibility.slice(0, 3).map((criteria, i) => (
+                              <Badge key={i} variant="outline" className="text-xs">
+                                ✓ {criteria}
+                              </Badge>
+                            ))}
+                            {scheme.eligibility.length > 3 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{scheme.eligibility.length - 3} more
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-2">
                           <Button 
                             variant="outline" 
                             size="sm" 
@@ -375,7 +413,10 @@ export function EligibilityChecker() {
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold">{selectedScheme.schemeName}</h3>
+                    <div>
+                      <h3 className="text-lg font-semibold">{selectedScheme.title}</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{selectedScheme.ministry}</p>
+                    </div>
                     <Button variant="ghost" size="sm" onClick={() => setSelectedScheme(null)}>
                       ×
                     </Button>
@@ -404,22 +445,20 @@ export function EligibilityChecker() {
             )}
           </AnimatePresence>
 
-          {/* API Key Warning */}
-          {!import.meta.env.VITE_GEMINI_API_KEY && (
-            <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5" />
-                <div className="text-xs">
-                  <p className="font-medium text-yellow-800 dark:text-yellow-200">
-                    Gemini API Key Required
-                  </p>
-                  <p className="text-yellow-700 dark:text-yellow-300 mt-1">
-                    Add your Gemini API key to environment variables as VITE_GEMINI_API_KEY for AI-powered recommendations.
-                  </p>
-                </div>
+          {/* Info Section */}
+          <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex items-start gap-2">
+              <Sparkles className="w-4 h-4 text-blue-600 mt-0.5" />
+              <div className="text-xs">
+                <p className="font-medium text-blue-800 dark:text-blue-200">
+                  AI-Powered Recommendations
+                </p>
+                <p className="text-blue-700 dark:text-blue-300 mt-1">
+                  Our AI analyzes your profile against all available government schemes to find the best matches for you.
+                </p>
               </div>
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
     </motion.div>
