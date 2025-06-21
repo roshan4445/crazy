@@ -9,6 +9,7 @@ export interface UserProfile {
   education?: string;
   employment?: string;
   category?: string;
+  language?: string;
 }
 
 export interface Scheme {
@@ -197,8 +198,66 @@ const ALL_SCHEMES: Scheme[] = [
     applied: 125000,
     slots: 250000,
     ministry: 'Ministry of Finance',
+  },
+  {
+    id: '9',
+    title: 'Mudra Loan Scheme',
+    description: 'Micro-finance loans for small businesses and entrepreneurs.',
+    amount: 'Up to ₹10 lakh',
+    deadline: 'Ongoing',
+    category: 'Business',
+    eligibility: ['Small business owner', 'Non-corporate entity', 'Valid business plan'],
+    benefits: ['Collateral-free loan', 'Low interest rates', 'Easy processing'],
+    applicationSteps: [
+      'Visit bank or NBFC',
+      'Submit application',
+      'Business verification',
+      'Loan disbursement'
+    ],
+    isNew: false,
+    isUrgent: false,
+    applied: 28000000,
+    slots: 35000000,
+    ministry: 'Ministry of Finance',
+  },
+  {
+    id: '10',
+    title: 'Beti Bachao Beti Padhao',
+    description: 'Scheme to improve child sex ratio and promote girl child education.',
+    amount: 'Various benefits',
+    deadline: 'Ongoing',
+    category: 'Women & Child',
+    eligibility: ['Girl child', 'Parents of girl child', 'Educational institutions'],
+    benefits: ['Educational support', 'Awareness programs', 'Financial incentives'],
+    applicationSteps: [
+      'Contact local authorities',
+      'Submit required documents',
+      'Enroll in program',
+      'Receive benefits'
+    ],
+    isNew: false,
+    isUrgent: false,
+    applied: 5000000,
+    slots: 10000000,
+    ministry: 'Ministry of Women & Child Development',
   }
 ];
+
+// Language configurations
+export const SUPPORTED_LANGUAGES = {
+  'english': { name: 'English', code: 'en' },
+  'hindi': { name: 'हिंदी', code: 'hi' },
+  'bengali': { name: 'বাংলা', code: 'bn' },
+  'tamil': { name: 'தமிழ்', code: 'ta' },
+  'telugu': { name: 'తెలుగు', code: 'te' },
+  'marathi': { name: 'मराठी', code: 'mr' },
+  'gujarati': { name: 'ગુજરાતી', code: 'gu' },
+  'kannada': { name: 'ಕನ್ನಡ', code: 'kn' },
+  'malayalam': { name: 'മലയാളം', code: 'ml' },
+  'punjabi': { name: 'ਪੰਜਾਬੀ', code: 'pa' },
+  'urdu': { name: 'اردو', code: 'ur' },
+  'odia': { name: 'ଓଡ଼ିଆ', code: 'or' }
+};
 
 // Convert user profile to income number for comparison
 function getIncomeValue(incomeRange: string): number {
@@ -226,32 +285,58 @@ export async function getEligibilityRecommendations(profile: UserProfile): Promi
       category: profile.category
     };
 
+    const selectedLanguage = profile.language || 'english';
+    const languageInstruction = selectedLanguage === 'english' 
+      ? 'Respond in English only.' 
+      : `Respond in ${SUPPORTED_LANGUAGES[selectedLanguage as keyof typeof SUPPORTED_LANGUAGES]?.name || 'English'} language. Translate all scheme information, eligibility criteria, and descriptions to this language.`;
+
     // Create the prompt for AI filtering
     const prompt = `
-You are a smart assistant for filtering government schemes. 
+You are a smart assistant for filtering government schemes in India. ${languageInstruction}
+
 Given the following user details:
-- Age: ${user.age}
+- Age: ${user.age} years
 - Gender: ${user.gender}
-- Annual Family Income: ₹${user.income}
+- Annual Family Income: ₹${user.income.toLocaleString()}
 - State: ${user.state}
 - Education: ${user.education || 'Not specified'}
 - Employment: ${user.employment || 'Not specified'}
 - Category: ${user.category || 'General'}
 
-Filter the following JSON list of schemes and return ONLY the ones the user is eligible for. Use ONLY the eligibility criteria present in each scheme to match.
+TASK: Filter the following JSON list of schemes and return ONLY the ones the user is DEFINITELY eligible for based on the eligibility criteria.
 
-Return only the valid **filtered JSON array** without extra text or comments. No explanation needed.
+IMPORTANT INSTRUCTIONS:
+1. Be VERY STRICT with eligibility matching
+2. Check age ranges carefully (e.g., "Age 18-25" means user must be between 18 and 25)
+3. Check income limits precisely (e.g., "Family income < ₹8 lakh" means income must be less than 800,000)
+4. Consider gender-specific schemes (e.g., women-only schemes)
+5. Consider category-specific schemes (SC/ST/OBC requirements)
+6. If user doesn't meet ANY criteria of a scheme, exclude it completely
+7. Return schemes in order of relevance (most relevant first)
+8. ${languageInstruction}
+
+Return ONLY the valid filtered JSON array without any extra text, explanations, or markdown formatting.
 
 ### Scheme List:
 ${JSON.stringify(ALL_SCHEMES, null, 2)}
 
-### Output Format:
+### Expected Output Format:
 [
   {
     "id": "...",
     "title": "...",
     "description": "...",
-    ...
+    "amount": "...",
+    "deadline": "...",
+    "category": "...",
+    "eligibility": [...],
+    "benefits": [...],
+    "applicationSteps": [...],
+    "isNew": boolean,
+    "isUrgent": boolean,
+    "applied": number,
+    "slots": number,
+    "ministry": "..."
   }
 ]
 `;
@@ -279,13 +364,22 @@ ${JSON.stringify(ALL_SCHEMES, null, 2)}
     const data = await response.json();
     
     if (data.candidates && data.candidates.length > 0) {
-      const jsonString = data.candidates[0].content.parts[0].text;
+      let jsonString = data.candidates[0].content.parts[0].text;
       
       // Clean the response to extract only the JSON array
-      const cleanedJson = jsonString.replace(/```json\n?|\n?```/g, '').trim();
-      const filteredSchemes: Scheme[] = JSON.parse(cleanedJson);
+      jsonString = jsonString.replace(/```json\n?|\n?```/g, '').trim();
       
-      console.log("Filtered Eligible Schemes:", filteredSchemes);
+      // Remove any text before the first [ and after the last ]
+      const startIndex = jsonString.indexOf('[');
+      const endIndex = jsonString.lastIndexOf(']');
+      
+      if (startIndex !== -1 && endIndex !== -1) {
+        jsonString = jsonString.substring(startIndex, endIndex + 1);
+      }
+      
+      const filteredSchemes: Scheme[] = JSON.parse(jsonString);
+      
+      console.log("AI Filtered Eligible Schemes:", filteredSchemes);
       return filteredSchemes;
     } else {
       console.log("No response received from AI.");
@@ -295,46 +389,142 @@ ${JSON.stringify(ALL_SCHEMES, null, 2)}
   } catch (error) {
     console.error("Error getting AI recommendations:", error);
     
-    // Fallback: return some default schemes based on basic criteria
-    return ALL_SCHEMES.filter(scheme => {
-      const userAge = parseInt(profile.age);
-      const userIncome = getIncomeValue(profile.income);
-      
-      // Basic filtering logic as fallback
-      if (scheme.category === 'Education' && userAge >= 18 && userAge <= 25 && userIncome < 800000) {
-        return true;
-      }
-      if (scheme.category === 'Digital India' && userAge >= 18 && userAge <= 35) {
-        return true;
-      }
-      if (scheme.category === 'Women & Child' && profile.gender === 'female') {
-        return true;
-      }
-      if (scheme.category === 'Healthcare' && userIncome < 1000000) {
-        return true;
-      }
-      
-      return false;
-    }).slice(0, 5); // Return max 5 schemes as fallback
+    // Enhanced fallback logic
+    return getLocalFallbackSchemes(profile);
   }
 }
 
-export async function getDetailedSchemeInfo(schemeTitle: string): Promise<string> {
+// Enhanced local fallback with better logic
+function getLocalFallbackSchemes(profile: UserProfile): Scheme[] {
+  const userAge = parseInt(profile.age);
+  const userIncome = getIncomeValue(profile.income);
+  const eligibleSchemes: Scheme[] = [];
+
+  ALL_SCHEMES.forEach(scheme => {
+    let isEligible = false;
+
+    // Education schemes
+    if (scheme.category === 'Education') {
+      if (userAge >= 18 && userAge <= 25 && userIncome < 800000) {
+        isEligible = true;
+      }
+    }
+    
+    // Digital India schemes
+    else if (scheme.category === 'Digital India') {
+      if (userAge >= 18 && userAge <= 35) {
+        isEligible = true;
+      }
+    }
+    
+    // Women & Child schemes
+    else if (scheme.category === 'Women & Child') {
+      if (profile.gender === 'female') {
+        isEligible = true;
+      }
+    }
+    
+    // Healthcare schemes
+    else if (scheme.category === 'Healthcare') {
+      if (userIncome < 1000000) {
+        isEligible = true;
+      }
+    }
+    
+    // Business schemes
+    else if (scheme.category === 'Business') {
+      if (userAge >= 18 && (profile.employment === 'self-employed' || profile.employment === 'unemployed')) {
+        isEligible = true;
+      }
+    }
+    
+    // Agriculture schemes
+    else if (scheme.category === 'Agriculture') {
+      if (profile.employment === 'self-employed' || profile.state?.includes('rural')) {
+        isEligible = true;
+      }
+    }
+    
+    // Housing schemes
+    else if (scheme.category === 'Housing') {
+      if (userIncome < 1800000) {
+        isEligible = true;
+      }
+    }
+
+    if (isEligible) {
+      eligibleSchemes.push(scheme);
+    }
+  });
+
+  return eligibleSchemes.slice(0, 6); // Return max 6 schemes
+}
+
+export async function getDetailedSchemeInfo(schemeTitle: string, language: string = 'english'): Promise<string> {
   try {
+    const languageInstruction = language === 'english' 
+      ? 'Provide the response in clear, simple English.' 
+      : `Provide the complete response in ${SUPPORTED_LANGUAGES[language as keyof typeof SUPPORTED_LANGUAGES]?.name || 'English'} language. Translate all information including technical terms, procedures, and requirements.`;
+
     const prompt = `
-Provide detailed information about the "${schemeTitle}" government scheme in India. Include:
+${languageInstruction}
 
-1. Complete scheme overview
-2. Detailed eligibility criteria
-3. Application process step by step
-4. Required documents list
-5. Benefits and coverage details
-6. Important deadlines and timelines
-7. Contact information and helpline
-8. Tips for successful application
-9. Common mistakes to avoid
+Provide comprehensive and VERY CLEAR information about the "${schemeTitle}" government scheme in India. Structure your response as follows:
 
-Format the response in a clear, structured manner that would be helpful for a citizen applying for this scheme.
+## 📋 SCHEME OVERVIEW
+- What is this scheme about?
+- Who launched it and when?
+- Main objectives
+
+## ✅ DETAILED ELIGIBILITY CRITERIA
+- Age requirements (if any)
+- Income limits (specify exact amounts)
+- Educational qualifications needed
+- Gender/category requirements
+- State/region specific criteria
+- Any other specific conditions
+
+## 💰 FINANCIAL BENEFITS
+- Exact amount of money/benefits
+- How the money is disbursed
+- Payment schedule/frequency
+- Any additional benefits
+
+## 📝 STEP-BY-STEP APPLICATION PROCESS
+1. First step (be very specific)
+2. Second step (include where to go/what website)
+3. Third step (mention documents needed)
+4. Continue with all steps...
+5. Final step (what happens after approval)
+
+## 📄 REQUIRED DOCUMENTS CHECKLIST
+- Document 1 (explain why needed)
+- Document 2 (explain why needed)
+- Continue for all documents...
+
+## ⏰ IMPORTANT DEADLINES & TIMELINES
+- Application deadline (if any)
+- Processing time
+- When benefits start
+- Renewal requirements
+
+## 📞 CONTACT INFORMATION & HELP
+- Official website URL
+- Helpline numbers
+- Email addresses
+- Local office contacts
+
+## 💡 SUCCESS TIPS
+- Best practices for application
+- Common mistakes to avoid
+- How to track application status
+
+## ⚠️ IMPORTANT WARNINGS
+- Fraud prevention tips
+- What to watch out for
+- Official vs fake websites
+
+Make the language simple and easy to understand for common citizens. Use bullet points and clear formatting.
 `;
 
     const options = {
@@ -367,13 +557,81 @@ Format the response in a clear, structured manner that would be helpful for a ci
 
   } catch (error) {
     console.error('Error getting scheme details:', error);
-    return `Detailed information about ${schemeTitle} is currently unavailable. Please visit the official government portal or contact the relevant ministry for more information.
+    
+    const fallbackLanguage = language === 'english' ? 'English' : SUPPORTED_LANGUAGES[language as keyof typeof SUPPORTED_LANGUAGES]?.name || 'English';
+    
+    return `## ⚠️ Information Currently Unavailable
 
-For general assistance:
-- Visit: india.gov.in
-- Call: 1800-11-1111 (Citizen Helpline)
-- Email: support@gov.in
+Detailed information about **${schemeTitle}** is temporarily unavailable in ${fallbackLanguage}.
 
-Please ensure you have all required documents and meet the eligibility criteria before applying.`;
+### 🔗 Alternative Resources:
+- **Official Portal**: india.gov.in
+- **Citizen Helpline**: 1800-11-1111
+- **Email Support**: support@gov.in
+
+### 📋 General Application Tips:
+1. **Verify Eligibility**: Check all criteria carefully
+2. **Prepare Documents**: Keep all required papers ready
+3. **Official Channels**: Apply only through government websites
+4. **Avoid Fraud**: Never pay money for government scheme applications
+5. **Track Status**: Save your application reference number
+
+### 🏛️ Visit Local Offices:
+- District Collector Office
+- Block Development Office
+- Common Service Centers (CSC)
+
+Please contact the relevant ministry or visit official government portals for accurate and up-to-date information about this scheme.`;
+  }
+}
+
+export async function getMultilingualExplanation(text: string, targetLanguage: string): Promise<string> {
+  if (targetLanguage === 'english') return text;
+
+  try {
+    const languageName = SUPPORTED_LANGUAGES[targetLanguage as keyof typeof SUPPORTED_LANGUAGES]?.name || 'English';
+    
+    const prompt = `
+Translate the following government scheme information to ${languageName} language. 
+Maintain the same structure and formatting. 
+Make sure technical terms are properly translated but keep official scheme names in English with local translation in brackets.
+
+Original text:
+${text}
+
+Provide the complete translation in ${languageName}:
+`;
+
+    const options = {
+      method: "POST",
+      headers: {
+        'Content-Type': "application/json",
+      },
+      body: JSON.stringify({
+        "contents": [{
+          "parts": [{
+            "text": prompt
+          }]
+        }]
+      })
+    };
+
+    const response = await fetch(GEMINI_API_URL, options);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.candidates && data.candidates.length > 0) {
+      return data.candidates[0].content.parts[0].text;
+    } else {
+      return text; // Return original if translation fails
+    }
+
+  } catch (error) {
+    console.error('Error translating text:', error);
+    return text; // Return original text if translation fails
   }
 }

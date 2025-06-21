@@ -20,10 +20,20 @@ import {
   ExternalLink,
   Loader2,
   Users,
-  Clock
+  Clock,
+  Languages,
+  Globe,
+  Info
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getEligibilityRecommendations, getDetailedSchemeInfo, type UserProfile, type Scheme } from '@/lib/gemini';
+import { 
+  getEligibilityRecommendations, 
+  getDetailedSchemeInfo, 
+  getMultilingualExplanation,
+  SUPPORTED_LANGUAGES,
+  type UserProfile, 
+  type Scheme 
+} from '@/lib/gemini';
 
 const indianStates = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -56,6 +66,7 @@ export function EligibilityChecker() {
     education: '',
     employment: '',
     category: '',
+    language: 'english',
   });
   
   const [eligibleSchemes, setEligibleSchemes] = useState<Scheme[]>([]);
@@ -63,6 +74,7 @@ export function EligibilityChecker() {
   const [selectedScheme, setSelectedScheme] = useState<Scheme | null>(null);
   const [schemeDetails, setSchemeDetails] = useState<string>('');
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [currentLanguage, setCurrentLanguage] = useState('english');
 
   const checkEligibility = async () => {
     if (!isFormComplete()) {
@@ -72,13 +84,18 @@ export function EligibilityChecker() {
 
     setIsChecking(true);
     try {
-      const results = await getEligibilityRecommendations(profile);
+      const profileWithLanguage = { ...profile, language: currentLanguage };
+      const results = await getEligibilityRecommendations(profileWithLanguage);
       setEligibleSchemes(results);
       
       if (results.length > 0) {
-        toast.success(`🎉 Found ${results.length} eligible schemes for you!`);
+        toast.success(`🎉 Found ${results.length} eligible schemes for you!`, {
+          description: 'AI has analyzed your profile and found matching government schemes.',
+        });
       } else {
-        toast.info('No schemes found matching your current profile. Try updating your information.');
+        toast.info('No schemes found matching your current profile.', {
+          description: 'Try updating your information or check back later for new schemes.',
+        });
       }
     } catch (error) {
       console.error('Error checking eligibility:', error);
@@ -92,7 +109,7 @@ export function EligibilityChecker() {
     setSelectedScheme(scheme);
     setIsLoadingDetails(true);
     try {
-      const details = await getDetailedSchemeInfo(scheme.title);
+      const details = await getDetailedSchemeInfo(scheme.title, currentLanguage);
       setSchemeDetails(details);
     } catch (error) {
       console.error('Error loading scheme details:', error);
@@ -100,6 +117,17 @@ export function EligibilityChecker() {
     } finally {
       setIsLoadingDetails(false);
     }
+  };
+
+  const handleLanguageChange = (language: string) => {
+    setCurrentLanguage(language);
+    setProfile(prev => ({ ...prev, language }));
+    
+    // Show language change confirmation
+    const languageName = SUPPORTED_LANGUAGES[language as keyof typeof SUPPORTED_LANGUAGES]?.name || 'English';
+    toast.success(`Language changed to ${languageName}`, {
+      description: 'AI responses will now be in your selected language.',
+    });
   };
 
   const isFormComplete = () => {
@@ -123,6 +151,13 @@ export function EligibilityChecker() {
     return colors[category] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300';
   };
 
+  const getUrgencyColor = (scheme: Scheme) => {
+    const progress = getProgressValue(scheme);
+    if (scheme.isUrgent || progress > 90) return 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/10';
+    if (progress > 70) return 'border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/10';
+    return 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800/50';
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
@@ -131,15 +166,35 @@ export function EligibilityChecker() {
     >
       <Card className="bg-gradient-to-br from-blue-50 to-green-50 dark:from-blue-900/10 dark:to-green-900/10">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="w-5 h-5 text-blue-600" />
-            AI-Powered Eligibility Checker
-            <Badge variant="secondary" className="ml-auto">
-              <Sparkles className="w-3 h-3 mr-1" />
-              Gemini AI
-            </Badge>
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Brain className="w-5 h-5 text-blue-600" />
+              AI-Powered Eligibility Checker
+              <Badge variant="secondary" className="ml-2">
+                <Sparkles className="w-3 h-3 mr-1" />
+                Gemini AI
+              </Badge>
+            </CardTitle>
+            
+            {/* Language Selector */}
+            <div className="flex items-center gap-2">
+              <Languages className="w-4 h-4 text-gray-600" />
+              <Select value={currentLanguage} onValueChange={handleLanguageChange}>
+                <SelectTrigger className="w-32 h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(SUPPORTED_LANGUAGES).map(([key, lang]) => (
+                    <SelectItem key={key} value={key}>
+                      {lang.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
+        
         <CardContent>
           <Tabs defaultValue="profile" className="space-y-4">
             <TabsList className="grid w-full grid-cols-2">
@@ -151,6 +206,24 @@ export function EligibilityChecker() {
 
             <TabsContent value="profile" className="space-y-4">
               <div className="grid grid-cols-1 gap-4">
+                {/* Language Notice */}
+                {currentLanguage !== 'english' && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <Globe className="w-4 h-4 text-blue-600 mt-0.5" />
+                      <div className="text-xs">
+                        <p className="font-medium text-blue-800 dark:text-blue-200">
+                          Multilingual AI Support Active
+                        </p>
+                        <p className="text-blue-700 dark:text-blue-300 mt-1">
+                          AI responses will be provided in {SUPPORTED_LANGUAGES[currentLanguage as keyof typeof SUPPORTED_LANGUAGES]?.name}. 
+                          All scheme information will be translated for better understanding.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Basic Information */}
                 <div className="space-y-3">
                   <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2">
@@ -308,7 +381,7 @@ export function EligibilityChecker() {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.1 }}
-                        className="border rounded-lg p-4 space-y-3 bg-white dark:bg-gray-800/50 hover:shadow-md transition-shadow"
+                        className={`border rounded-lg p-4 space-y-3 hover:shadow-md transition-all ${getUrgencyColor(scheme)}`}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -350,14 +423,19 @@ export function EligibilityChecker() {
                         <div className="space-y-2">
                           <div className="flex justify-between text-xs">
                             <span>Applications: {scheme.applied.toLocaleString()}/{scheme.slots.toLocaleString()}</span>
-                            <span>{getProgressValue(scheme)}% filled</span>
+                            <span className={getProgressValue(scheme) > 90 ? 'text-red-600 font-medium' : ''}>
+                              {getProgressValue(scheme)}% filled
+                            </span>
                           </div>
                           <Progress value={getProgressValue(scheme)} className="h-1" />
+                          {getProgressValue(scheme) > 90 && (
+                            <p className="text-xs text-red-600 font-medium">⚠️ Limited slots remaining!</p>
+                          )}
                         </div>
 
                         {/* Eligibility Preview */}
                         <div className="space-y-2">
-                          <p className="text-xs font-medium text-gray-500">Eligibility Criteria:</p>
+                          <p className="text-xs font-medium text-gray-500">Why you're eligible:</p>
                           <div className="flex flex-wrap gap-1">
                             {scheme.eligibility.slice(0, 3).map((criteria, i) => (
                               <Badge key={i} variant="outline" className="text-xs">
@@ -380,7 +458,7 @@ export function EligibilityChecker() {
                             onClick={() => loadSchemeDetails(scheme)}
                           >
                             <FileText className="w-3 h-3 mr-1" />
-                            View Details
+                            Detailed Info
                           </Button>
                           <Button size="sm" className="flex-1 h-7 text-xs">
                             <ExternalLink className="w-3 h-3 mr-1" />
@@ -409,13 +487,19 @@ export function EligibilityChecker() {
                   initial={{ scale: 0.9, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 0.9, opacity: 0 }}
-                  className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+                  className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h3 className="text-lg font-semibold">{selectedScheme.title}</h3>
                       <p className="text-sm text-gray-600 dark:text-gray-400">{selectedScheme.ministry}</p>
+                      {currentLanguage !== 'english' && (
+                        <Badge variant="outline" className="mt-1">
+                          <Languages className="w-3 h-3 mr-1" />
+                          {SUPPORTED_LANGUAGES[currentLanguage as keyof typeof SUPPORTED_LANGUAGES]?.name}
+                        </Badge>
+                      )}
                     </div>
                     <Button variant="ghost" size="sm" onClick={() => setSelectedScheme(null)}>
                       ×
@@ -425,17 +509,24 @@ export function EligibilityChecker() {
                   {isLoadingDetails ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin" />
-                      <span className="ml-2">Loading detailed information...</span>
+                      <span className="ml-2">
+                        {currentLanguage === 'english' 
+                          ? 'Loading detailed information...' 
+                          : 'Loading information in your language...'}
+                      </span>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <div className="whitespace-pre-wrap text-sm">
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
                         {schemeDetails}
                       </div>
                       <div className="flex gap-2 pt-4 border-t">
                         <Button className="flex-1">
                           <ExternalLink className="w-4 h-4 mr-2" />
                           Apply for this Scheme
+                        </Button>
+                        <Button variant="outline" onClick={() => setSelectedScheme(null)}>
+                          Close
                         </Button>
                       </div>
                     </div>
@@ -445,17 +536,52 @@ export function EligibilityChecker() {
             )}
           </AnimatePresence>
 
-          {/* Info Section */}
-          <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <div className="flex items-start gap-2">
-              <Sparkles className="w-4 h-4 text-blue-600 mt-0.5" />
-              <div className="text-xs">
-                <p className="font-medium text-blue-800 dark:text-blue-200">
-                  AI-Powered Recommendations
-                </p>
-                <p className="text-blue-700 dark:text-blue-300 mt-1">
-                  Our AI analyzes your profile against all available government schemes to find the best matches for you.
-                </p>
+          {/* Enhanced Info Section */}
+          <div className="mt-4 space-y-3">
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-blue-600 mt-0.5" />
+                <div className="text-xs">
+                  <p className="font-medium text-blue-800 dark:text-blue-200">
+                    AI-Powered Smart Matching
+                  </p>
+                  <p className="text-blue-700 dark:text-blue-300 mt-1">
+                    Our advanced AI analyzes your complete profile against all government schemes to find perfect matches. 
+                    Results are personalized and updated in real-time.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {currentLanguage !== 'english' && (
+              <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <Globe className="w-4 h-4 text-green-600 mt-0.5" />
+                  <div className="text-xs">
+                    <p className="font-medium text-green-800 dark:text-green-200">
+                      Multilingual Support
+                    </p>
+                    <p className="text-green-700 dark:text-green-300 mt-1">
+                      All scheme information, eligibility criteria, and application steps are translated to your language 
+                      for better understanding and accessibility.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <div className="flex items-start gap-2">
+                <Info className="w-4 h-4 text-amber-600 mt-0.5" />
+                <div className="text-xs">
+                  <p className="font-medium text-amber-800 dark:text-amber-200">
+                    Important Reminder
+                  </p>
+                  <p className="text-amber-700 dark:text-amber-300 mt-1">
+                    Always verify information on official government websites before applying. 
+                    Never pay money for government scheme applications - they are free!
+                  </p>
+                </div>
               </div>
             </div>
           </div>
