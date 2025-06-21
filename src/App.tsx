@@ -8,42 +8,16 @@ import { TrafficPage } from '@/pages/TrafficPage';
 import { ElderlyProgramPage } from '@/pages/ElderlyProgramPage';
 import { FloatingVoiceAssistant } from '@/components/voice/FloatingVoiceAssistant';
 
-
-import ProtectedRoute from "./components/Protected_route"
-import LoginPage from '@/pages/LoginPage';
-
-
 function App() {
   return (
     <Router>
       <Layout>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={
-            <ProtectedRoute>
-              <HomePage />
-            </ProtectedRoute>
-          } />
-          <Route path="/complaints" element={
-            <ProtectedRoute>
-              <ComplaintPage />
-            </ProtectedRoute>
-          } />
-          <Route path="/schemes" element={
-            <ProtectedRoute>
-              <SchemesPage />
-            </ProtectedRoute>
-          } />
-          <Route path="/traffic" element={
-            <ProtectedRoute>
-              <TrafficPage />
-            </ProtectedRoute>
-          } />
-          <Route path="/elderly-program" element={
-            <ProtectedRoute>
-              <ElderlyProgramPage />
-            </ProtectedRoute>
-          } />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/complaints" element={<ComplaintPage />} />
+          <Route path="/schemes" element={<SchemesPage />} />
+          <Route path="/traffic" element={<TrafficPage />} />
+          <Route path="/elderly-program" element={<ElderlyProgramPage />} />
         </Routes>
         <FloatingVoiceAssistant />
         <Toaster />
